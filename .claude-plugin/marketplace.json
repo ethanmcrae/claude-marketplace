@@ -1,0 +1,21 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "ethanmcrae-marketplace",
+  "description": "Personal Claude Code plugins for workflow automation, Linear integration, and agent communication",
+  "owner": {
+    "name": "Ethan McRae"
+  },
+  "plugins": [
+    {
+      "name": "linear-workflow",
+      "description": "Linear ticket management — standup summaries, ticket dashboard, and quick ticket creation with personal defaults",
+      "version": "1.0.0",
+      "author": {
+        "name": "Ethan McRae"
+      },
+      "source": "./plugins/linear-workflow",
+      "category": "productivity",
+      "keywords": ["linear", "tickets", "standup", "project-management"]
+    }
+  ]
+}
