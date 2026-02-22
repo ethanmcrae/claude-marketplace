@@ -1,61 +1,75 @@
 ---
 name: agent-network-init
 description: Initialize the Agent Network system. Use when the user says "set up agent network", "install agent network", "configure agent messaging", or "agent-network-init".
+allowed-tools: Bash(python3 *), Bash(sqlite3 *), Bash(*/.venv/bin/pip *), Bash(*/.venv/bin/python3 *)
 ---
 
 # Agent Network — Install & Setup
 
-You are setting up the Agent Network: a cross-conversation messaging system that lets independent Claude Code instances communicate in real time via shared SQLite + MCP tools + hooks.
+You are setting up the Agent Network: a cross-conversation messaging system that lets independent Claude Code instances communicate in real time.
 
-Follow each step below. Use `AskUserQuestion` when choices are needed. Report progress after each step.
+## Communication Style
+
+**This install should feel seamless.** Before starting, give the user a brief overview:
+
+> Setting up Agent Network. This will:
+> 1. Create a Python environment and install dependencies
+> 2. Register the MCP server and message hooks
+> 3. Initialize the message database
+>
+> This takes about 30 seconds.
+
+Then proceed through the steps below. Print a **one-line status** before each phase (e.g., "Installing dependencies..."). Do NOT dump raw command output to the user — only surface errors if something fails.
 
 ---
 
-## Step A — Detect skill directory
+## Step 1 — Detect skill directory & check prerequisites
 
-Resolve the skill base directory. All source files live here:
+Resolve the skill base directory:
 
 ```
 SKILL_DIR = ~/.claude/skills/agent-network-init
 ```
 
-Expand `~` to the absolute home path. Confirm the directory exists and contains `agent_network_server.py` and `hooks/`. If missing, tell the user the skill is not installed correctly and stop.
+Expand `~` to the absolute home path. Confirm it exists and contains `agent_network_server.py` and `hooks/`. If missing, tell the user the skill is not installed correctly and stop.
+
+Run prerequisite checks in a single command:
+
+```bash
+python3 --version && sqlite3 --version
+```
+
+If either is missing, guide the user to install it and stop.
+
+Check if already installed:
+- MCP server registered in `~/.claude.json` under `mcpServers.agent-network`
+- Hooks present in `~/.claude/settings.json` for SessionStart, PreToolUse, and Stop
+
+If already installed, ask the user: **Repair/Reinstall** or **Skip setup**.
+
+> **Migration note**: If an old config exists at `~/.claude/.mcp.json`, delete that file — it was the wrong location and Claude Code never reads it.
 
 ---
 
-## Step B — Check prerequisites
+## Step 2 — Create venv & install dependencies
 
-1. Verify `python3` is available (`python3 --version`). If missing, guide the user to install it.
-2. Verify `sqlite3` is available (`sqlite3 --version`). If missing, suggest Homebrew on macOS.
-3. Check if already installed:
-   - MCP server registered in `~/.claude.json` under the `mcpServers` key with key `agent-network`
-   - Hooks present in `~/.claude/settings.json` for SessionStart, PreToolUse, and Stop
-4. If already installed, ask the user: **Repair/Reinstall** or **Skip setup**.
+Run as a single chained command:
 
-> **Migration note**: If an old config exists at `~/.claude/.mcp.json`, delete that file — it was the wrong location and Claude Code never reads it. The correct location is `~/.claude.json`.
+```bash
+python3 -m venv "$SKILL_DIR/.venv" && "$SKILL_DIR/.venv/bin/pip" install -q -r "$SKILL_DIR/requirements.txt" && "$SKILL_DIR/.venv/bin/python3" -c "import mcp; print('OK')"
+```
 
----
-
-## Step C — Create venv & install dependencies
-
-1. Create a Python venv inside the skill directory if it doesn't already exist:
-   ```bash
-   python3 -m venv "$SKILL_DIR/.venv"
-   ```
-2. Install the runtime dependency:
-   ```bash
-   "$SKILL_DIR/.venv/bin/pip" install -r "$SKILL_DIR/requirements.txt"
-   ```
-3. Confirm `mcp` is importable:
-   ```bash
-   "$SKILL_DIR/.venv/bin/python3" -c "import mcp; print('OK')"
-   ```
+The `-q` flag keeps pip output minimal. If the final `import mcp` prints `OK`, dependencies are good. Only surface output to the user if something fails.
 
 ---
 
-## Step D — Register MCP server
+## Step 3 — Register MCP server & configure hooks
 
-Merge into `~/.claude.json` (the file at `$HOME/.claude.json`, **not** inside `~/.claude/`). Read the existing file, add or update the `mcpServers.agent-network` key, and write back. Preserve all other keys in the file.
+This step edits two config files. Read each file first, merge the new keys, and write back. **Preserve all existing content** — never overwrite.
+
+### 3a. Register MCP server
+
+Merge into `~/.claude.json` (the file at `$HOME/.claude.json`, **not** inside `~/.claude/`):
 
 ```json
 {
@@ -68,19 +82,12 @@ Merge into `~/.claude.json` (the file at `$HOME/.claude.json`, **not** inside `~
 }
 ```
 
-Replace `<SKILL_DIR>` with the absolute expanded path (no `~`).
+Replace `<SKILL_DIR>` with the absolute expanded path.
 
-**Important**: The file `~/.claude.json` contains many other Claude Code settings — always read it first, merge the `mcpServers` key, and write back. Never overwrite the file.
+### 3b. Install hooks & permissions
 
-If the old (incorrect) file `~/.claude/.mcp.json` exists, delete it after migrating.
+Merge into `~/.claude/settings.json` under the `hooks` key. **Append to arrays, never overwrite existing hooks.**
 
----
-
-## Step E — Install hooks
-
-Merge into `~/.claude/settings.json` under the `hooks` key. **Preserve all existing hooks** — append to arrays, never overwrite.
-
-### SessionStart hook
 ```json
 {
   "hooks": {
@@ -94,15 +101,7 @@ Merge into `~/.claude/settings.json` under the `hooks` key. **Preserve all exist
           }
         ]
       }
-    ]
-  }
-}
-```
-
-### PreToolUse hook
-```json
-{
-  "hooks": {
+    ],
     "PreToolUse": [
       {
         "matcher": "*",
@@ -113,15 +112,7 @@ Merge into `~/.claude/settings.json` under the `hooks` key. **Preserve all exist
           }
         ]
       }
-    ]
-  }
-}
-```
-
-### Stop hook
-```json
-{
-  "hooks": {
+    ],
     "Stop": [
       {
         "hooks": [
@@ -132,20 +123,7 @@ Merge into `~/.claude/settings.json` under the `hooks` key. **Preserve all exist
         ]
       }
     ]
-  }
-}
-```
-
-Replace `<SKILL_DIR>` with the absolute expanded path. Read existing `~/.claude/settings.json` first, merge the hook arrays (don't duplicate if already present), and write back.
-
----
-
-## Step F — Set permissions
-
-Merge the following into the `permissions.allow` array in `~/.claude/settings.json` (same file as hooks). Do not duplicate if already present.
-
-```json
-{
+  },
   "permissions": {
     "allow": [
       "mcp__agent-network__*",
@@ -155,58 +133,35 @@ Merge the following into the `permissions.allow` array in `~/.claude/settings.js
 }
 ```
 
-This allows the MCP tools and background listener to run without prompting the user each time.
+Replace `<SKILL_DIR>` with the absolute expanded path. Do not duplicate entries if already present.
 
 ---
 
-## Step G — Initialize database
+## Step 4 — Initialize database
 
-Run the server's `init_db()` to create `~/.claude/agent_network.db`:
-
-```bash
-"$SKILL_DIR/.venv/bin/python3" -c "
-import sys; sys.path.insert(0, '$SKILL_DIR')
-from agent_network_server import init_db
-init_db()
-print('DB initialized')
-"
-```
-
-Verify with a test query:
+Run the server's `init_db()` and verify in one command:
 
 ```bash
-sqlite3 ~/.claude/agent_network.db "SELECT name FROM sqlite_master WHERE type='table';"
+"$SKILL_DIR/.venv/bin/python3" -c "import sys; sys.path.insert(0, '$SKILL_DIR'); from agent_network_server import init_db; init_db(); print('DB initialized')" && sqlite3 ~/.claude/agent_network.db "SELECT name FROM sqlite_master WHERE type='table';"
 ```
 
-Expect `sessions` and `messages` tables.
+Expect `sessions` and `messages` tables. Only tell the user if it fails.
 
 ---
 
-## Step H — Show quick start
+## Step 5 — Done
 
 Print this to the user:
 
 ```
-Agent Network setup complete!
+Agent Network is ready!
 
-To use it, tell any Claude Code session:
+Open two terminals and try it:
 
-  "Join network PROJECT-123 as dev-agent and work on the auth feature"
+  Terminal 1: "Join network my-project as alice"
+  Terminal 2: "Join network my-project as bob"
 
-In another terminal:
+Then in Terminal 1: "Send bob a message: hello!"
 
-  "Join network PROJECT-123 as reviewer and review the auth changes"
-
-Agents will automatically receive messages from each other in real time.
-
-Available commands (via MCP tools):
-  join_network()      — Join a named network with an agent ID
-  send_message()      — Send a direct message to another agent
-  broadcast()         — Message all agents in your network
-  check_inbox()       — Check for new messages
-  wait_for_message()  — Block until a message arrives
-  list_agents()       — See who's in your network
-  leave_network()     — Leave the network when done
-
-This skill is available globally via /agent-network-init.
+Messages are delivered automatically — no polling needed.
 ```
