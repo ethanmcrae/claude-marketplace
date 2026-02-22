@@ -13,11 +13,11 @@ Add this marketplace to Claude Code:
 Then install plugins:
 
 ```
-/plugin install linear-workflow@ethanmcrae-marketplace
+/plugin install <plugin-name>@ethanmcrae-marketplace
 ```
 
 ## Plugins
 
 | Plugin | Description |
 |--------|-------------|
-| `linear-workflow` | Linear ticket management — standup, dashboard, quick ticket creation |
+| `agent-network` | Cross-conversation agent communication system that lets independent Claude Code instances message each other in real time |

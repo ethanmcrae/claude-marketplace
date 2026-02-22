@@ -5,5 +5,17 @@
   "owner": {
     "name": "Ethan McRae"
   },
-  "plugins": []
+  "plugins": [
+    {
+      "name": "agent-network",
+      "description": "Cross-conversation agent communication system that lets independent Claude Code instances message each other in real time",
+      "version": "1.0.0",
+      "author": {
+        "name": "Ethan McRae"
+      },
+      "source": "./plugins/agent-network",
+      "category": "communication",
+      "keywords": ["agent", "network", "messaging", "cross-conversation", "mcp"]
+    }
+  ]
 }
