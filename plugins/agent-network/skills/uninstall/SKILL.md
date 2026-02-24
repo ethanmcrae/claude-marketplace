@@ -1,7 +1,7 @@
 ---
 name: agent-network-uninstall
 description: Cleanly uninstall the Agent Network system. Use when the user says "uninstall agent network", "remove agent network", "clean up agent network", or "agent-network-uninstall".
-allowed-tools: Bash(rm -rf *), Bash(rm *), Bash(claude plugin *)
+allowed-tools: Bash(rm -rf *), Bash(rm *)
 ---
 
 # Agent Network — Uninstall

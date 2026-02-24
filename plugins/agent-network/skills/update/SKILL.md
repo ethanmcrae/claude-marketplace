@@ -72,14 +72,70 @@ The plugin cache lives at `~/.claude/plugins/cache/<marketplace-name>/agent-netw
 
 ---
 
-## Step 4 — Re-run init if needed
+## Step 4 — Discover Claude root locations
 
-After updating, the hooks and MCP server config may need refreshing if paths changed (the new cache directory has a different version in its path).
+The plugin cache path changed (new version directory), so hooks and MCP config pointing to the old path need updating. Use `AskUserQuestion`:
 
-Ask the user:
+> **Where is Agent Network installed?**
+>
+> 1. **Default only** — Just `~/.claude/`
+> 2. **Custom location** — I use `CLAUDE_CONFIG_DIR` for a different path
+> 3. **Multiple locations** — I have multiple Claude accounts with different config dirs
 
-> Updated Agent Network from v{old} to v{new}. Would you like to re-run setup to ensure hooks and MCP config point to the new version?
+Based on the answer, build a list of **Claude root paths** (`ROOTS`):
 
-If yes, run `/agent-network-init`. If no, tell the user:
+- **Default**: `ROOTS = ["~/.claude"]` (expand to absolute path)
+- **Custom**: Ask for the path. `ROOTS = ["<custom-path>"]`
+- **Multiple**: Ask for all paths. `ROOTS = ["~/.claude", "<path2>", ...]`
 
-> Restart Claude Code to use the new version.
+---
+
+## Step 5 — Update MCP server registration (once)
+
+The new cache path means the MCP server command path changed. Read `~/.claude.json`, update the `mcpServers.agent-network` entry to point to the new `SKILL_DIR` (the `skills/agent-network-init` directory inside the new cache version directory):
+
+```json
+{
+  "mcpServers": {
+    "agent-network": {
+      "command": "<NEW_SKILL_DIR>/.venv/bin/python3",
+      "args": ["<NEW_SKILL_DIR>/agent_network_server.py"]
+    }
+  }
+}
+```
+
+Where `<NEW_SKILL_DIR>` is `<new-cache-path>/skills/agent-network-init`.
+
+**Note**: If the venv doesn't exist at the new path yet, copy it from the old cache or tell the user to re-run `/agent-network-init` to recreate it.
+
+---
+
+## Step 6 — Update hooks & permissions (per root)
+
+**For each root in `ROOTS`**, read `<root>/settings.json` and update any hook commands that reference the old cache path to use the new one. The hooks to update:
+
+- `hooks.SessionStart` — command containing `agent-network-init/hooks/session_start.py`
+- `hooks.PreToolUse` — command containing `agent-network-init/hooks/check_inbox.py`
+- `hooks.Stop` — command containing `agent-network-init/hooks/stop_hook.py`
+
+Also update any permission entries that reference the old path (the `listener.sh` pattern).
+
+Write back each file. **Preserve all non-agent-network entries.**
+
+---
+
+## Step 7 — Confirm
+
+Tell the user:
+
+```
+Updated Agent Network from v{old} to v{new}.
+
+Updated:
+  - Plugin cache
+  - MCP server registration
+  - Hooks in N settings file(s)
+
+Restart Claude Code to use the new version.
+```
