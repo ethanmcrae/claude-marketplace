@@ -9,7 +9,7 @@
     {
       "name": "agent-network",
       "description": "Cross-conversation agent communication system that lets independent Claude Code instances message each other in real time",
-      "version": "1.4.0",
+      "version": "1.4.1",
       "author": {
         "name": "Ethan McRae"
       },
