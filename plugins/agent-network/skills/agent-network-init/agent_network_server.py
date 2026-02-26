@@ -9,9 +9,12 @@ import asyncio
 import json
 import logging
 import os
+import socket
 import sqlite3
 import subprocess
 import time
+import urllib.error
+import urllib.request
 
 from mcp.server.fastmcp import FastMCP
 
@@ -72,6 +75,17 @@ def init_db():
             ON messages(recipient_id, status) WHERE status = 'pending';
         CREATE INDEX IF NOT EXISTS idx_sessions_network
             ON sessions(network_id);
+        CREATE TABLE IF NOT EXISTS peers (
+            name TEXT PRIMARY KEY,
+            url TEXT NOT NULL,
+            shared_secret TEXT DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'pending'
+                CHECK(status IN ('pending','approved','rejected')),
+            direction TEXT NOT NULL DEFAULT 'outbound'
+                CHECK(direction IN ('outbound','inbound','mutual')),
+            created_at REAL NOT NULL DEFAULT (unixepoch('now')),
+            last_seen REAL
+        );
     """)
     db.close()
 
@@ -188,6 +202,109 @@ def _build_listener_command(agent_id: str, network_id: str) -> str:
     script_dir = os.path.dirname(os.path.abspath(__file__))
     listener_path = os.path.join(script_dir, "hooks", "listener.sh")
     return f'bash "{listener_path}" "{agent_id}" "{DB_PATH}" "0" "{network_id}"'
+
+
+# --- Peer Helpers ---
+
+
+def _get_machine_name() -> str:
+    """Get this machine's friendly name."""
+    return os.environ.get("AGENT_NETWORK_MACHINE_NAME", socket.gethostname())
+
+
+def _get_local_url() -> str | None:
+    """Get this machine's HTTP server URL."""
+    return os.environ.get("AGENT_NETWORK_HTTP_URL")
+
+
+def _http_request(
+    url: str, method: str = "GET", data: dict | None = None,
+    secret: str = "", timeout: int = 10,
+) -> tuple[int, dict]:
+    """Make an HTTP request using stdlib urllib. Returns (status_code, response_dict)."""
+    headers = {"Content-Type": "application/json"}
+    if secret:
+        headers["Authorization"] = f"Bearer {secret}"
+
+    body = json.dumps(data).encode() if data else None
+    req = urllib.request.Request(url, data=body, headers=headers, method=method)
+
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.status, json.loads(resp.read().decode())
+    except urllib.error.HTTPError as e:
+        try:
+            resp_body = json.loads(e.read().decode())
+        except Exception:
+            resp_body = {"error": str(e)}
+        return e.code, resp_body
+    except (urllib.error.URLError, OSError) as e:
+        return 0, {"error": f"Connection failed: {e}"}
+
+
+# Peer agent cache: {cache_key: {"agents": [...], "fetched_at": float}}
+_peer_agent_cache: dict = {}
+
+
+def _query_peer_agents(
+    peer_name: str, peer_url: str, secret: str, network_id: str,
+) -> list[dict]:
+    """Get agents from a peer, with 30s caching."""
+    cache_key = f"{peer_name}:{network_id}"
+    cached = _peer_agent_cache.get(cache_key)
+    if cached and (time.time() - cached["fetched_at"]) < 30:
+        return cached["agents"]
+
+    status, resp = _http_request(
+        f"{peer_url}/api/agents?network_id={network_id}",
+        secret=secret,
+    )
+    if status == 200:
+        agents = resp.get("agents", [])
+        _peer_agent_cache[cache_key] = {"agents": agents, "fetched_at": time.time()}
+        return agents
+    return []
+
+
+def _try_send_to_peer(
+    sender_id: str, network_id: str, recipient_id: str, content: str,
+) -> dict | None:
+    """Try to deliver a message via approved peers. Returns result dict or None."""
+    db = _get_db()
+    try:
+        peers = db.execute(
+            "SELECT name, url, shared_secret FROM peers "
+            "WHERE status = 'approved' AND direction = 'mutual'"
+        ).fetchall()
+    finally:
+        db.close()
+
+    for peer in peers:
+        agents = _query_peer_agents(
+            peer["name"], peer["url"], peer["shared_secret"], network_id,
+        )
+        if any(a.get("agent_id") == recipient_id for a in agents):
+            status, resp = _http_request(
+                f"{peer['url']}/api/deliver",
+                method="POST",
+                data={
+                    "sender_id": sender_id,
+                    "network_id": network_id,
+                    "recipient_id": recipient_id,
+                    "content": content,
+                },
+                secret=peer["shared_secret"],
+            )
+            if status == 200:
+                return {**resp, "status": "sent_to_peer", "peer": peer["name"]}
+            elif status != 0:
+                return {
+                    "error": (
+                        f"Peer '{peer['name']}' rejected: "
+                        f"{resp.get('error', 'unknown')}"
+                    ),
+                }
+    return None
 
 
 # --- Shared Helpers ---
@@ -406,6 +523,10 @@ def send_message(to: str, content: str) -> dict:
             (to, network_id),
         ).fetchone()
         if not recipient:
+            # Try peer networks
+            peer_result = _try_send_to_peer(agent_id, network_id, to, content)
+            if peer_result:
+                return _identity_envelope(peer_result, agent_id, network_id)
             return _identity_envelope(
                 {
                     "error": (
@@ -560,15 +681,42 @@ def broadcast(content: str) -> dict:
 
         db.execute("COMMIT")
 
+        # Broadcast to approved peers
+        remote_count = 0
+        peer_rows = db.execute(
+            "SELECT name, url, shared_secret FROM peers "
+            "WHERE status = 'approved' AND direction = 'mutual'"
+        ).fetchall()
+        for peer in peer_rows:
+            try:
+                status_code, resp = _http_request(
+                    f"{peer['url']}/api/deliver",
+                    method="POST",
+                    data={
+                        "sender_id": agent_id,
+                        "network_id": network_id,
+                        "content": content,
+                        "is_broadcast": True,
+                    },
+                    secret=peer["shared_secret"],
+                )
+                if status_code == 200:
+                    remote_count += resp.get("delivered_count", 0)
+            except Exception:
+                pass
+
         _append_log({
             "event": "broadcast",
             "network": network_id,
             "from": agent_id,
             "recipient_count": sent_count,
+            "remote_count": remote_count,
             "content_length": len(content),
         })
 
         result = {"status": "broadcast_sent", "recipient_count": sent_count}
+        if remote_count > 0:
+            result["remote_count"] = remote_count
         if errors:
             result["skipped"] = errors
         return _identity_envelope(result, agent_id, network_id)
@@ -671,11 +819,264 @@ def list_agents() -> dict:
                 "is_you": r["agent_id"] == agent_id,
             })
 
+        # Query approved peers for remote agents
+        peer_rows = db.execute(
+            "SELECT name, url, shared_secret FROM peers "
+            "WHERE status = 'approved' AND direction = 'mutual'"
+        ).fetchall()
+        for peer in peer_rows:
+            try:
+                remote_agents = _query_peer_agents(
+                    peer["name"], peer["url"],
+                    peer["shared_secret"], network_id,
+                )
+                for ra in remote_agents:
+                    agents.append({
+                        "agent_id": ra.get("agent_id", "?"),
+                        "role": ra.get("role", ""),
+                        "peer": peer["name"],
+                        "is_you": False,
+                        "is_active": True,
+                    })
+            except Exception:
+                pass  # Skip unreachable peers
+
         return _identity_envelope(
             {"agents": agents, "count": len(agents)},
             agent_id,
             network_id,
         )
+    finally:
+        db.close()
+
+
+# --- Peer MCP Tools ---
+
+
+@mcp.tool()
+def pair_with(url: str, name: str, secret: str = "") -> dict:
+    """Pair with a remote machine to enable cross-machine messaging.
+
+    Args:
+        url: The remote machine's HTTP server URL (e.g., "http://192.168.1.50:7777")
+        name: A friendly name for this peer (e.g., "work-laptop")
+        secret: Optional shared secret for authentication
+    """
+    import re
+
+    local_url = _get_local_url()
+    if not local_url:
+        return {
+            "error": (
+                "Set AGENT_NETWORK_HTTP_URL env var to your machine's "
+                "HTTP server URL before pairing."
+            ),
+        }
+
+    if not re.match(r'^[a-zA-Z0-9_-]+$', name):
+        return {
+            "error": (
+                f"Invalid peer name '{name}'. "
+                "Only letters, numbers, hyphens, and underscores allowed."
+            ),
+        }
+
+    db = _get_db()
+    try:
+        existing = db.execute(
+            "SELECT status, direction FROM peers WHERE name = ?", (name,),
+        ).fetchone()
+        if existing and existing["direction"] == "mutual":
+            return {"error": f"Already paired with '{name}'."}
+
+        db.execute("BEGIN IMMEDIATE")
+        db.execute(
+            """INSERT INTO peers (name, url, shared_secret, status, direction)
+               VALUES (?, ?, ?, 'pending', 'outbound')
+               ON CONFLICT(name) DO UPDATE SET
+                   url=excluded.url, shared_secret=excluded.shared_secret,
+                   status='pending', direction='outbound'""",
+            (name, url, secret),
+        )
+        db.execute("COMMIT")
+
+        # Notify remote
+        status_code, resp = _http_request(
+            f"{url}/api/pair/request",
+            method="POST",
+            data={
+                "name": _get_machine_name(),
+                "url": local_url,
+                "secret": secret,
+            },
+            secret=secret,
+        )
+
+        if status_code == 0:
+            return {
+                "status": "pending",
+                "peer": name,
+                "warning": (
+                    f"Could not reach {url}. Pairing request saved locally — "
+                    "retry when remote is online."
+                ),
+            }
+        elif status_code == 200:
+            return {
+                "status": "pending",
+                "peer": name,
+                "message": "Pairing request sent. Waiting for remote approval.",
+            }
+        else:
+            return {
+                "status": "pending",
+                "peer": name,
+                "warning": (
+                    f"Remote returned {status_code}: "
+                    f"{resp.get('error', 'unknown')}"
+                ),
+            }
+    except Exception:
+        try:
+            db.execute("ROLLBACK")
+        except Exception:
+            pass
+        raise
+    finally:
+        db.close()
+
+
+@mcp.tool()
+def approve_peer(peer_id: str) -> dict:
+    """Approve a pending peer pairing request.
+
+    Args:
+        peer_id: The name of the peer to approve
+    """
+    db = _get_db()
+    try:
+        peer = db.execute(
+            "SELECT name, url, shared_secret, status, direction FROM peers "
+            "WHERE name = ?",
+            (peer_id,),
+        ).fetchone()
+
+        if not peer:
+            return {
+                "error": (
+                    f"Peer '{peer_id}' not found. "
+                    "Use list_peers() to see pending requests."
+                ),
+            }
+
+        if peer["direction"] == "mutual" and peer["status"] == "approved":
+            return {"error": f"Peer '{peer_id}' is already approved."}
+
+        if peer["status"] != "pending":
+            return {
+                "error": (
+                    f"Peer '{peer_id}' is not pending "
+                    f"(status: {peer['status']})."
+                ),
+            }
+
+        db.execute("BEGIN IMMEDIATE")
+        db.execute(
+            "UPDATE peers SET status = 'approved', direction = 'mutual', "
+            "last_seen = unixepoch('now') WHERE name = ?",
+            (peer_id,),
+        )
+        db.execute("COMMIT")
+
+        # Notify remote
+        status_code, _resp = _http_request(
+            f"{peer['url']}/api/pair/accept",
+            method="POST",
+            data={"name": _get_machine_name()},
+            secret=peer["shared_secret"],
+        )
+
+        if status_code == 0:
+            # Revert to pending if can't reach
+            db.execute("BEGIN IMMEDIATE")
+            db.execute(
+                "UPDATE peers SET status = 'pending', direction = 'inbound' "
+                "WHERE name = ?",
+                (peer_id,),
+            )
+            db.execute("COMMIT")
+            return {
+                "error": (
+                    f"Could not reach peer '{peer_id}' at {peer['url']}. "
+                    "Reverted to pending."
+                ),
+            }
+
+        _append_log({"event": "peer_approved", "peer": peer_id})
+        return {"status": "approved", "peer": peer_id, "url": peer["url"]}
+    except Exception:
+        try:
+            db.execute("ROLLBACK")
+        except Exception:
+            pass
+        raise
+    finally:
+        db.close()
+
+
+@mcp.tool()
+def list_peers() -> dict:
+    """List all configured peers and their connection status."""
+    db = _get_db()
+    try:
+        rows = db.execute(
+            "SELECT name, url, status, direction, last_seen, created_at "
+            "FROM peers ORDER BY created_at"
+        ).fetchall()
+
+        peers = []
+        for r in rows:
+            peers.append({
+                "name": r["name"],
+                "url": r["url"],
+                "status": r["status"],
+                "direction": r["direction"],
+                "last_seen": r["last_seen"],
+                "created_at": r["created_at"],
+            })
+
+        return {"peers": peers, "count": len(peers)}
+    finally:
+        db.close()
+
+
+@mcp.tool()
+def remove_peer(peer_id: str) -> dict:
+    """Remove a peer from the peers list.
+
+    Args:
+        peer_id: The name of the peer to remove
+    """
+    db = _get_db()
+    try:
+        existing = db.execute(
+            "SELECT name FROM peers WHERE name = ?", (peer_id,),
+        ).fetchone()
+        if not existing:
+            return {"error": f"Peer '{peer_id}' not found."}
+
+        db.execute("BEGIN IMMEDIATE")
+        db.execute("DELETE FROM peers WHERE name = ?", (peer_id,))
+        db.execute("COMMIT")
+
+        _append_log({"event": "peer_removed", "peer": peer_id})
+        return {"status": "removed", "peer": peer_id}
+    except Exception:
+        try:
+            db.execute("ROLLBACK")
+        except Exception:
+            pass
+        raise
     finally:
         db.close()
 
