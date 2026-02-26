@@ -1,5 +1,5 @@
 {
   "name": "agent-network",
   "description": "Cross-conversation agent communication system that lets independent Claude Code instances message each other in real time",
-  "version": "1.5.0"
+  "version": "1.5.1"
 }

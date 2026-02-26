@@ -27,6 +27,12 @@ if [ ! -f "$DB_PATH" ]; then
     exit 2
 fi
 
+# Track parent PID for orphan detection.
+# Process chain: Claude Code → zsh wrapper (Task shell) → listener.sh
+# When Claude exits, the zsh wrapper's PPID changes to 1 (launchd/init).
+# We detect this and self-terminate to prevent zombie accumulation.
+PARENT_PID=$PPID
+
 # Escape single quotes for safe SQL interpolation
 SAFE_ID="${AGENT_ID//\'/\'\'}"
 SAFE_NETWORK_ID="${NETWORK_ID//\'/\'\'}"
@@ -35,6 +41,12 @@ ELAPSED=0
 POLL_INTERVAL=2
 
 while true; do
+    # Orphan detection: exit if parent shell has been reparented to init/launchd (PID 1)
+    GRANDPARENT_PID=$(ps -o ppid= -p "$PARENT_PID" 2>/dev/null | tr -d ' ') || true
+    if [ -z "$GRANDPARENT_PID" ] || [ "$GRANDPARENT_PID" = "1" ]; then
+        exit 0
+    fi
+
     COUNT=$(sqlite3 -cmd ".timeout 3000" "$DB_PATH" "SELECT COUNT(*) FROM messages WHERE recipient_id = '${SAFE_ID}' AND status = 'pending';" 2>/dev/null) || {
         echo "LISTENER_ERROR: failed to query database"
         exit 2
