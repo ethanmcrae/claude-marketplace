@@ -1,0 +1,5 @@
+{
+  "name": "claude-usage",
+  "description": "Check your claude.ai usage limits and remaining capacity from Claude Code",
+  "version": "1.0.0"
+}

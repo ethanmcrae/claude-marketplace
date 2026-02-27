@@ -16,6 +16,17 @@
       "source": "./plugins/agent-network",
       "category": "communication",
       "keywords": ["agent", "network", "messaging", "cross-conversation", "mcp", "chat"]
+    },
+    {
+      "name": "claude-usage",
+      "description": "Check your claude.ai usage limits and remaining capacity from Claude Code",
+      "version": "1.0.0",
+      "author": {
+        "name": "Ethan McRae"
+      },
+      "source": "./plugins/claude-usage",
+      "category": "productivity",
+      "keywords": ["usage", "limits", "quota", "claude.ai", "capacity"]
     }
   ]
 }

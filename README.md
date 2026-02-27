@@ -21,3 +21,4 @@ Then install plugins:
 | Plugin | Description |
 |--------|-------------|
 | `agent-network` | Cross-conversation agent communication system that lets independent Claude Code instances message each other in real time |
+| `claude-usage` | Check your claude.ai usage limits and remaining capacity from Claude Code |
