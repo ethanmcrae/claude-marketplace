@@ -262,11 +262,16 @@ class AgentNetworkHandler(BaseHTTPRequestHandler):
             now = time.time()
             agents = []
             for r in rows:
+                active = (now - r["last_seen"]) < 30
                 agents.append({
                     "agent_id": r["agent_id"],
                     "role": r["role"],
-                    "is_active": (now - r["last_seen"]) < 30,
+                    "is_active": active,
                 })
+
+            # Filter to active-only when requested (default: all)
+            if qs.get("active", ["0"])[0] == "1":
+                agents = [a for a in agents if a["is_active"]]
 
             _json_response(self, 200, {"agents": agents, "count": len(agents)})
         finally:

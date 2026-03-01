@@ -447,6 +447,8 @@ def join_network(network_id: str, agent_id: str, role: str = "") -> dict:
                     peer["shared_secret"], network_id,
                 )
                 for ra in remote_agents:
+                    if not ra.get("is_active", True):
+                        continue
                     if ra.get("agent_id") == agent_id:
                         db.execute("ROLLBACK")
                         return {
@@ -490,6 +492,7 @@ def join_network(network_id: str, agent_id: str, role: str = "") -> dict:
                     "new_agent_id": agent_id,
                     "migrated_count": migrated,
                 })
+        now = time.time()
         others = db.execute(
             """SELECT agent_id, role, last_seen FROM sessions
                WHERE network_id = ? AND agent_id != ?""",
@@ -497,7 +500,11 @@ def join_network(network_id: str, agent_id: str, role: str = "") -> dict:
         ).fetchall()
         db.execute("COMMIT")
 
-        agents = [{"agent_id": r["agent_id"], "role": r["role"]} for r in others]
+        agents = [
+            {"agent_id": r["agent_id"], "role": r["role"]}
+            for r in others
+            if (now - r["last_seen"]) < AGENT_EXPIRY_SECONDS
+        ]
         agents.extend(peer_agents)
         return {
             "status": "joined",
@@ -914,7 +921,7 @@ def list_agents() -> dict:
                         "role": ra.get("role", ""),
                         "peer": peer["name"],
                         "is_you": False,
-                        "is_active": True,
+                        "is_active": ra.get("is_active", True),
                     })
             except Exception:
                 pass  # Skip unreachable peers
