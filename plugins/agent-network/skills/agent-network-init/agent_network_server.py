@@ -434,11 +434,12 @@ def join_network(network_id: str, agent_id: str, role: str = "") -> dict:
                          "agent_id": agent_id, "old_session": existing["session_id"],
                          "new_session": session_id})
 
-        # LAN collision check: verify agent_id isn't taken on a peer machine
+        # LAN collision check + remote agent discovery
         peer_rows = db.execute(
             "SELECT name, url, shared_secret FROM peers "
             "WHERE status = 'approved' AND direction = 'mutual'"
         ).fetchall()
+        peer_agents: list[dict] = []  # collected for other_agents response
         for peer in peer_rows:
             try:
                 remote_agents = _query_peer_agents(
@@ -455,6 +456,11 @@ def join_network(network_id: str, agent_id: str, role: str = "") -> dict:
                                 "Choose a different name."
                             ),
                         }
+                    peer_agents.append({
+                        "agent_id": ra.get("agent_id", "?"),
+                        "role": ra.get("role", ""),
+                        "peer": peer["name"],
+                    })
             except Exception:
                 pass  # Skip unreachable peers
 
@@ -492,6 +498,7 @@ def join_network(network_id: str, agent_id: str, role: str = "") -> dict:
         db.execute("COMMIT")
 
         agents = [{"agent_id": r["agent_id"], "role": r["role"]} for r in others]
+        agents.extend(peer_agents)
         return {
             "status": "joined",
             "your_id": agent_id,
@@ -706,16 +713,6 @@ def broadcast(content: str) -> dict:
             (network_id, agent_id),
         ).fetchall()
 
-        if not others:
-            return _identity_envelope(
-                {
-                    "status": "no_recipients",
-                    "message": "No other agents in the network to broadcast to.",
-                },
-                agent_id,
-                network_id,
-            )
-
         db.execute("BEGIN IMMEDIATE")
         sent_count = 0
         errors = []
@@ -774,6 +771,17 @@ def broadcast(content: str) -> dict:
                     remote_count += resp.get("delivered_count", 0)
             except Exception:
                 pass
+
+        total = sent_count + remote_count
+        if total == 0 and not errors:
+            return _identity_envelope(
+                {
+                    "status": "no_recipients",
+                    "message": "No other agents in the network to broadcast to.",
+                },
+                agent_id,
+                network_id,
+            )
 
         _append_log({
             "event": "broadcast",
