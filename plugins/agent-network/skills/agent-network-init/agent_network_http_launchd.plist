@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.claude.agent-network.http</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string><SKILL_DIR>/.venv/bin/python3</string>
+        <string><SKILL_DIR>/agent_network_http.py</string>
+        <string>--host</string>
+        <string>0.0.0.0</string>
+        <string>--port</string>
+        <string>7777</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>AGENT_NETWORK_AUTO_PAIR</key>
+        <string>1</string>
+        <key>HOME</key>
+        <string><HOME></string>
+    </dict>
+    <key>StandardOutPath</key>
+    <string><HOME>/.claude/agent_network_http.stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string><HOME>/.claude/agent_network_http.stderr.log</string>
+</dict>
+</plist>

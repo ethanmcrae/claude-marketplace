@@ -160,6 +160,34 @@ After configuring all roots, tell the user which locations were set up:
 
 ---
 
+## Step 5.5 — Install HTTP Server LaunchAgent
+
+Install the HTTP server as a LaunchAgent so it starts automatically on login and enables Bonjour LAN auto-discovery.
+
+1. Read the plist template at `$SKILL_DIR/agent_network_http_launchd.plist`
+2. Replace `<SKILL_DIR>` with the absolute expanded skill directory path
+3. Replace `<HOME>` with the user's home directory (`$HOME`)
+4. Write the filled template to `~/Library/LaunchAgents/com.claude.agent-network.http.plist`
+5. Load the LaunchAgent:
+
+```bash
+launchctl load ~/Library/LaunchAgents/com.claude.agent-network.http.plist
+```
+
+6. Wait 2 seconds, then verify with a health check:
+
+```bash
+curl -s http://localhost:7777/api/health
+```
+
+Expect `{"status":"ok","machine":"..."}`. If the health check fails, check the logs:
+- stdout: `~/.claude/agent_network_http.stdout.log`
+- stderr: `~/.claude/agent_network_http.stderr.log`
+
+> The LaunchAgent runs with `AGENT_NETWORK_AUTO_PAIR=1` and listens on `0.0.0.0` (all interfaces) so other Macs on the LAN can discover and pair automatically via Bonjour.
+
+---
+
 ## Step 6 — Initialize database (once)
 
 The message database is shared across all roots.
@@ -177,14 +205,16 @@ Expect `sessions` and `messages` tables. Only tell the user if it fails.
 Print this to the user:
 
 ```
-Agent Network is ready!
+Agent Network is ready! Cross-machine messaging is automatic on your LAN.
 
-Open two terminals and try it:
+Any Mac running Agent Network will be discovered via Bonjour.
+Just join the same network name on both machines:
 
-  Terminal 1: "Join network my-project as alice"
-  Terminal 2: "Join network my-project as bob"
+  Machine A: "Join network my-project as alice"
+  Machine B: "Join network my-project as bob"
 
-Then in Terminal 1: "Send bob a message: hello!"
+Then on Machine A: "Send bob a message: hello!"
 
 Messages are delivered automatically — no polling needed.
+No manual pairing, no IP addresses, no env vars.
 ```

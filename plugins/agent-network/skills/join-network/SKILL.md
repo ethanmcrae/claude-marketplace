@@ -31,6 +31,10 @@ The background listener's only job is to wake you from idle. Handle its output s
 
 Do **not** narrate infrastructure to the user (no "respawning listener", "checking inbox", etc.). Just respond to the message content naturally.
 
+## Cross-machine messaging
+
+Remote peers on your LAN are discovered and paired automatically via Bonjour — no manual `pair_with()` or `approve_peer()` needed. When you join a network, other machines running Agent Network on the same LAN are already available. The `join_network()` tool checks for agent ID collisions across all connected peers.
+
 ## If MCP tools are not available
 
 The `agent-network` MCP server must be registered first. Tell the user to run `/agent-network-init` to set it up, then try again.

@@ -213,8 +213,20 @@ def _get_machine_name() -> str:
 
 
 def _get_local_url() -> str | None:
-    """Get this machine's HTTP server URL."""
-    return os.environ.get("AGENT_NETWORK_HTTP_URL")
+    """Get this machine's HTTP server URL.
+
+    Checks env var first, then falls back to the URL file written by the
+    HTTP server (supports launchd where shell env vars aren't inherited).
+    """
+    url = os.environ.get("AGENT_NETWORK_HTTP_URL")
+    if url:
+        return url
+    try:
+        url_file = os.path.expanduser("~/.claude/agent_network_http.url")
+        with open(url_file) as f:
+            return f.read().strip() or None
+    except OSError:
+        return None
 
 
 def _http_request(
@@ -400,6 +412,13 @@ def join_network(network_id: str, agent_id: str, role: str = "") -> dict:
     try:
         db.execute("BEGIN IMMEDIATE")
 
+        # Check if this session had a previous agent_id (rename detection)
+        prev = db.execute(
+            "SELECT agent_id FROM sessions WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()
+        old_agent_id = prev["agent_id"] if prev and prev["agent_id"] != agent_id else None
+
         # Check for stale session holding this agent_id
         existing = db.execute(
             "SELECT session_id FROM sessions "
@@ -415,6 +434,30 @@ def join_network(network_id: str, agent_id: str, role: str = "") -> dict:
                          "agent_id": agent_id, "old_session": existing["session_id"],
                          "new_session": session_id})
 
+        # LAN collision check: verify agent_id isn't taken on a peer machine
+        peer_rows = db.execute(
+            "SELECT name, url, shared_secret FROM peers "
+            "WHERE status = 'approved' AND direction = 'mutual'"
+        ).fetchall()
+        for peer in peer_rows:
+            try:
+                remote_agents = _query_peer_agents(
+                    peer["name"], peer["url"],
+                    peer["shared_secret"], network_id,
+                )
+                for ra in remote_agents:
+                    if ra.get("agent_id") == agent_id:
+                        db.execute("ROLLBACK")
+                        return {
+                            "error": (
+                                f"Agent ID '{agent_id}' is already taken on "
+                                f"'{peer['name']}' in network '{network_id}'. "
+                                "Choose a different name."
+                            ),
+                        }
+            except Exception:
+                pass  # Skip unreachable peers
+
         db.execute(
             """INSERT INTO sessions (session_id, agent_id, network_id, role)
                VALUES (?, ?, ?, ?)
@@ -425,6 +468,22 @@ def join_network(network_id: str, agent_id: str, role: str = "") -> dict:
                    last_seen=unixepoch('now')""",
             (session_id, agent_id, network_id, role),
         )
+
+        # Migrate pending messages from old agent_id to new one
+        if old_agent_id:
+            migrated = db.execute(
+                "UPDATE messages SET recipient_id = ? "
+                "WHERE recipient_id = ? AND status = 'pending'",
+                (agent_id, old_agent_id),
+            ).rowcount
+            if migrated:
+                _append_log({
+                    "event": "rename_migrate",
+                    "network": network_id,
+                    "old_agent_id": old_agent_id,
+                    "new_agent_id": agent_id,
+                    "migrated_count": migrated,
+                })
         others = db.execute(
             """SELECT agent_id, role, last_seen FROM sessions
                WHERE network_id = ? AND agent_id != ?""",
@@ -527,10 +586,21 @@ def send_message(to: str, content: str) -> dict:
             peer_result = _try_send_to_peer(agent_id, network_id, to, content)
             if peer_result:
                 return _identity_envelope(peer_result, agent_id, network_id)
+
+            # Build detailed error with peer check info
+            peer_count = db.execute(
+                "SELECT COUNT(*) as cnt FROM peers "
+                "WHERE status = 'approved' AND direction = 'mutual'"
+            ).fetchone()["cnt"]
+            if peer_count > 0:
+                peer_detail = f" (checked {peer_count} peer(s))"
+            else:
+                peer_detail = " (no peers configured)"
             return _identity_envelope(
                 {
                     "error": (
-                        f"Agent '{to}' not found in network '{network_id}'. "
+                        f"Agent '{to}' not found in network '{network_id}'"
+                        f"{peer_detail}. "
                         "Use list_agents() to see who's online."
                     ),
                 },
@@ -841,11 +911,24 @@ def list_agents() -> dict:
             except Exception:
                 pass  # Skip unreachable peers
 
-        return _identity_envelope(
-            {"agents": agents, "count": len(agents)},
-            agent_id,
-            network_id,
-        )
+        # Detect duplicate agent_ids across local and remote
+        warnings = []
+        seen_ids: dict[str, list[str]] = {}
+        for a in agents:
+            aid = a["agent_id"]
+            source = a.get("peer", "local")
+            seen_ids.setdefault(aid, []).append(source)
+        for aid, sources in seen_ids.items():
+            if len(sources) > 1:
+                warnings.append(
+                    f"Agent ID '{aid}' appears on multiple machines: "
+                    f"{', '.join(sources)}"
+                )
+
+        result = {"agents": agents, "count": len(agents)}
+        if warnings:
+            result["warnings"] = warnings
+        return _identity_envelope(result, agent_id, network_id)
     finally:
         db.close()
 
@@ -988,11 +1071,13 @@ def approve_peer(peer_id: str) -> dict:
         )
         db.execute("COMMIT")
 
-        # Notify remote
+        # Notify remote — include our local URL so the peer can look us up
+        # even if the name we send doesn't match what they stored
+        local_url = _get_local_url() or ""
         status_code, _resp = _http_request(
             f"{peer['url']}/api/pair/accept",
             method="POST",
-            data={"name": _get_machine_name()},
+            data={"name": _get_machine_name(), "url": local_url},
             secret=peer["shared_secret"],
         )
 
