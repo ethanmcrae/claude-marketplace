@@ -40,7 +40,7 @@ Collect all roots into `ROOTS` list.
 ### Inventory
 
 For each root, note what's present:
-- [ ] Hooks in `<root>/settings.json` (SessionStart, PreToolUse, Stop)
+- [ ] Hooks in `<root>/settings.json` (SessionStart, Stop, and legacy PreToolUse if present)
 - [ ] Permissions in `<root>/settings.json` (`mcp__agent-network__*`, listener)
 
 Also check shared resources:
@@ -76,7 +76,7 @@ Read `<root>/settings.json`. Remove **only** Agent Network entries:
 
 **Hooks to remove** — Remove any hook entry where the `command` contains `agent-network-init/hooks/` or `agent_network`. Check all three hook types:
 - `hooks.SessionStart` array — remove matching entries
-- `hooks.PreToolUse` array — remove matching entries
+- `hooks.PreToolUse` array — remove matching entries (legacy; may not be present)
 - `hooks.Stop` array — remove matching entries
 
 If a hook array becomes empty after removal, remove the entire key. If the `hooks` object becomes empty, remove it.

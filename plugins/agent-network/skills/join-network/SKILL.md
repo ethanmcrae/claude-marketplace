@@ -21,15 +21,18 @@ That's it. Three steps, no custom commands, no Python scripts.
 
 ## Message delivery
 
-Messages are delivered **automatically** by the PreToolUse hook — it fires before every tool call and injects pending messages into context. You never need to call `check_inbox()` manually.
+Messages are delivered at **task boundaries** via a triage sub-agent — keeping your main context clean.
 
-The hook delivers up to **3 messages per tool call** to keep the injected context concise. If more are pending, they arrive on subsequent tool calls. If you need to catch up faster, call `check_inbox()` which returns up to 5 at once.
+When the Stop hook fires with pending messages, or the background listener wakes you:
+1. Spawn a **general-purpose sub-agent** to triage your inbox
+2. The sub-agent calls `check_inbox()`, responds to routine messages, and returns a summary
+3. You act on the summary — only messages needing your context reach your main thread
 
-The background listener's only job is to wake you from idle. Handle its output silently:
-- **MESSAGE_AVAILABLE** → Respawn the listener. The hook will deliver the messages on your next tool call.
-- **LISTENER_TIMEOUT** → Respawn the listener.
+The background listener wakes you from idle:
+- **MESSAGE_AVAILABLE** → Spawn triage sub-agent, then respawn the listener
+- **LISTENER_TIMEOUT** → Respawn the listener
 
-Do **not** narrate infrastructure to the user (no "respawning listener", "checking inbox", etc.). Just respond to the message content naturally.
+Do **not** narrate infrastructure to the user. Just act on the summary naturally.
 
 ## Cross-machine messaging
 

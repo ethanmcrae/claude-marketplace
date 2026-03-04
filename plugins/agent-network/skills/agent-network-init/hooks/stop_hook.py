@@ -63,7 +63,15 @@ def main():
                 "decision": "block",
                 "reason": (
                     f"You have {pending} unread agent network message(s). "
-                    "Call check_inbox() to receive them."
+                    "Spawn a sub-agent to triage them — "
+                    "Agent tool with subagent_type: \"general-purpose\", prompt: "
+                    "\"Triage my agent network inbox. Call check_inbox() to read "
+                    "pending messages. For each message: respond autonomously to "
+                    "routine ones (status updates, acks, simple questions) with "
+                    "send_message(). For messages needing the main agent's context "
+                    "or decisions, include them verbatim in your summary. "
+                    "Return a brief summary of actions taken and anything needing "
+                    "attention.\""
                 ),
             }
             print(json.dumps(output))

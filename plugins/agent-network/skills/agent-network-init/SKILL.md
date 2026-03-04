@@ -121,17 +121,6 @@ For each root, merge into `<root>/settings.json`. Read existing file first. **Ap
         ]
       }
     ],
-    "PreToolUse": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 <SKILL_DIR>/hooks/check_inbox.py"
-          }
-        ]
-      }
-    ],
     "Stop": [
       {
         "hooks": [

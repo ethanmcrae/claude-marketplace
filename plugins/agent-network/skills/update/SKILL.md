@@ -113,11 +113,13 @@ Where `<NEW_SKILL_DIR>` is `<new-cache-path>/skills/agent-network-init`.
 
 ## Step 6 — Update hooks & permissions (per root)
 
-**For each root in `ROOTS`**, read `<root>/settings.json` and update any hook commands that reference the old cache path to use the new one. The hooks to update:
+**For each root in `ROOTS`**, read `<root>/settings.json` and update hooks:
 
+**Update path** for hooks that reference the old cache path:
 - `hooks.SessionStart` — command containing `agent-network-init/hooks/session_start.py`
-- `hooks.PreToolUse` — command containing `agent-network-init/hooks/check_inbox.py`
 - `hooks.Stop` — command containing `agent-network-init/hooks/stop_hook.py`
+
+**Remove legacy hook** — the PreToolUse hook was removed in this version. Delete the entire `hooks.PreToolUse` array entry where the command contains `agent-network-init/hooks/check_inbox.py`. If `hooks.PreToolUse` becomes empty, remove the key entirely. **This is critical** — a stale PreToolUse hook pointing to the old cache path will error on every tool call.
 
 Also update any permission entries that reference the old path (the `listener.sh` pattern).
 
