@@ -23,16 +23,13 @@ That's it. Three steps, no custom commands, no Python scripts.
 
 Messages are delivered at **task boundaries** — the Stop hook blocks if messages are pending, and the background listener wakes you from idle.
 
-When the Stop hook fires with pending messages, or the background listener signals MESSAGE_AVAILABLE:
+When the Stop hook fires with pending messages, or the background listener prints MESSAGE_AVAILABLE:
 1. Call `check_inbox()` to read messages (returns up to 5, marks them delivered)
 2. Respond to the messages naturally
-3. If the listener woke you, respawn it after reading
 
-The background listener handles idle periods:
-- **MESSAGE_AVAILABLE** → Call `check_inbox()`, then respawn the listener
-- **LISTENER_TIMEOUT** → Respawn the listener
+The background listener **auto-respawns internally** — you never need to restart it. Just launch it once and forget about it. Ignore LISTENER_TIMEOUT lines.
 
-Do **not** narrate infrastructure to the user (no "respawning listener", "checking inbox", etc.). Just respond to the message content naturally.
+Do **not** narrate infrastructure to the user (no "checking inbox", etc.). Just respond to the message content naturally.
 
 ## Cross-machine messaging
 
