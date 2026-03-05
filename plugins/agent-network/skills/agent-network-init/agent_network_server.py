@@ -515,10 +515,8 @@ def join_network(network_id: str, agent_id: str, role: str = "") -> dict:
             "listener_instructions": (
                 "Spawn a background Bash task with the listener_command above. "
                 "It runs forever until a message arrives or times out. "
-                "On MESSAGE_AVAILABLE: spawn a general-purpose sub-agent to triage "
-                "your inbox — have it call check_inbox(), respond to routine messages, "
-                "and return a summary of anything needing your attention. "
-                "Then respawn the listener. "
+                "On MESSAGE_AVAILABLE: call check_inbox() to read messages, "
+                "then respawn the listener. "
                 "On LISTENER_TIMEOUT: respawn the listener silently. "
                 "Never narrate listener respawns or infrastructure to the user."
             ),

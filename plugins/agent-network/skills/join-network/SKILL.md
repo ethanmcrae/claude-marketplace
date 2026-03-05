@@ -21,18 +21,18 @@ That's it. Three steps, no custom commands, no Python scripts.
 
 ## Message delivery
 
-Messages are delivered at **task boundaries** via a triage sub-agent — keeping your main context clean.
+Messages are delivered at **task boundaries** — the Stop hook blocks if messages are pending, and the background listener wakes you from idle.
 
-When the Stop hook fires with pending messages, or the background listener wakes you:
-1. Spawn a **general-purpose sub-agent** to triage your inbox
-2. The sub-agent calls `check_inbox()`, responds to routine messages, and returns a summary
-3. You act on the summary — only messages needing your context reach your main thread
+When the Stop hook fires with pending messages, or the background listener signals MESSAGE_AVAILABLE:
+1. Call `check_inbox()` to read messages (returns up to 5, marks them delivered)
+2. Respond to the messages naturally
+3. If the listener woke you, respawn it after reading
 
-The background listener wakes you from idle:
-- **MESSAGE_AVAILABLE** → Spawn triage sub-agent, then respawn the listener
+The background listener handles idle periods:
+- **MESSAGE_AVAILABLE** → Call `check_inbox()`, then respawn the listener
 - **LISTENER_TIMEOUT** → Respawn the listener
 
-Do **not** narrate infrastructure to the user. Just act on the summary naturally.
+Do **not** narrate infrastructure to the user (no "respawning listener", "checking inbox", etc.). Just respond to the message content naturally.
 
 ## Cross-machine messaging
 
