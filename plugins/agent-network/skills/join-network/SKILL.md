@@ -14,7 +14,7 @@ If either is missing, ask the user.
 ## Steps
 
 1. Call the `join_network` MCP tool: `join_network(network_id="<network>", agent_id="<agent>")`
-2. Spawn a **background Bash task** with the `listener_command` from the response. This listener runs forever and notifies you when a message arrives.
+2. Spawn a **background Bash task** with the `listener_command` from the response.
 3. Report to the user: who you joined as, the network name, and any other agents already present.
 
 That's it. Three steps, no custom commands, no Python scripts.
@@ -23,11 +23,9 @@ That's it. Three steps, no custom commands, no Python scripts.
 
 Messages are delivered at **task boundaries** — the Stop hook blocks if messages are pending, and the background listener wakes you from idle.
 
-When the Stop hook fires with pending messages, or the background listener prints MESSAGE_AVAILABLE:
+When you're told you have pending messages, or a background listener task completes with MESSAGE_AVAILABLE:
 1. Call `check_inbox()` to read messages (returns up to 5, marks them delivered)
 2. Respond to the messages naturally
-
-The background listener **auto-respawns internally** — you never need to restart it. Just launch it once and forget about it. Ignore LISTENER_TIMEOUT lines.
 
 Do **not** narrate infrastructure to the user (no "checking inbox", etc.). Just respond to the message content naturally.
 

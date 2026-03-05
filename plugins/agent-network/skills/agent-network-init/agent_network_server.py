@@ -200,15 +200,15 @@ def _append_log(entry: dict):
 def _build_listener_command(agent_id: str, network_id: str) -> str:
     """Build the bash command to run the background listener script.
 
-    Wraps the listener in a respawn loop so agents don't need to manually
-    restart it after MESSAGE_AVAILABLE or LISTENER_TIMEOUT events. The
-    listener exits on each event by design (to flush output), and this
-    loop restarts it automatically. Only exits on errors (exit code 2).
+    The listener polls indefinitely (timeout=0) and exits only when a
+    message arrives (MESSAGE_AVAILABLE) or on error. It must exit so
+    that the background task completion notification wakes the agent —
+    Claude Code only delivers notifications when a background process
+    finishes, not on incremental stdout.
     """
     script_dir = os.path.dirname(os.path.abspath(__file__))
     listener_path = os.path.join(script_dir, "hooks", "listener.sh")
-    inner = f'bash "{listener_path}" "{agent_id}" "{DB_PATH}" "0" "{network_id}"'
-    return f'while true; do {inner}; code=$?; [ "$code" -eq 2 ] && exit 2; sleep 1; done'
+    return f'bash "{listener_path}" "{agent_id}" "{DB_PATH}" "0" "{network_id}"'
 
 
 # --- Peer Helpers ---
@@ -521,9 +521,8 @@ def join_network(network_id: str, agent_id: str, role: str = "") -> dict:
             "listener_command": _build_listener_command(agent_id, network_id),
             "listener_instructions": (
                 "Spawn a background Bash task with the listener_command above. "
-                "It auto-respawns internally — you never need to restart it. "
-                "When it prints MESSAGE_AVAILABLE: call check_inbox() to read "
-                "messages. Ignore LISTENER_TIMEOUT lines. "
+                "When it completes with MESSAGE_AVAILABLE: call check_inbox() "
+                "to read messages. "
                 "Never narrate listener infrastructure to the user."
             ),
         }

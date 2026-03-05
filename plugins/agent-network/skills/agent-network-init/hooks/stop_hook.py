@@ -1,20 +1,40 @@
 #!/usr/bin/env python3
 """Stop hook — prevents Claude from going idle while connected to an agent network.
 
-Blocks the stop if there are pending messages, or nudges the agent to call
-wait_for_message() / leave_network(). Allows stop on second attempt
-(stop_hook_active=true) to prevent infinite loops.
+Two checks at every turn boundary:
+1. Blocks if there are pending messages (nudges agent to call check_inbox())
+2. Blocks if the background listener isn't running (provides re-spawn command)
 
 No external dependencies — stdlib only.
 """
 
 import json
 import os
+import subprocess
 import sys
 
 DB_PATH = os.environ.get(
     "AGENT_NETWORK_DB", os.path.expanduser("~/.claude/agent_network.db")
 )
+
+
+def _is_listener_running(agent_id: str) -> bool:
+    """Check if a background listener.sh process is running for this agent.
+
+    Matches 'listener.sh {agent_id} ' to avoid substring false positives
+    (e.g. agent "al" matching agent "alice"'s listener). The agent_id is
+    always followed by the db_path argument, so trailing space is safe.
+    """
+    try:
+        result = subprocess.run(
+            ["pgrep", "-fl", "listener.sh"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        return f"listener.sh {agent_id} " in result.stdout
+    except (subprocess.SubprocessError, OSError):
+        return True  # Assume running if we can't check
 
 
 def main():
@@ -50,8 +70,9 @@ def main():
         if not row:
             return
         agent_id = row["agent_id"]
+        network_id = row["network_id"]
 
-        # Only block if there are actual unread messages
+        # Priority 1: block if there are unread messages
         pending = db.execute(
             "SELECT COUNT(*) as cnt FROM messages "
             "WHERE recipient_id = ? AND status = 'pending'",
@@ -69,7 +90,24 @@ def main():
             print(json.dumps(output))
             return
 
-        # No pending messages → allow stop (background listener handles idle)
+        # Priority 2: block if background listener isn't running
+        if not _is_listener_running(agent_id):
+            hooks_dir = os.path.dirname(os.path.abspath(__file__))
+            listener_path = os.path.join(hooks_dir, "listener.sh")
+            listener_cmd = (
+                f'bash "{listener_path}" "{agent_id}" '
+                f'"{DB_PATH}" "0" "{network_id}"'
+            )
+            output = {
+                "decision": "block",
+                "reason": (
+                    "Your background listener has stopped. "
+                    "Re-spawn it now as a background Bash task "
+                    f"(run_in_background=true):\n{listener_cmd}"
+                ),
+            }
+            print(json.dumps(output))
+            return
 
     except sqlite3.Error:
         return
