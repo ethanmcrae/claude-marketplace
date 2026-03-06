@@ -64,13 +64,16 @@ if echo "$DURATION_ARG" | grep -qiE '^[0-9]{1,2}:[0-9]{2}\s*(am|pm)?$'; then
   # Absolute time
   TARGET_TIME=$(echo "$DURATION_ARG" | tr -d ' ')
 
+  # Build full datetime string with today's date for correct timestamp
+  TODAY=$(date +%Y-%m-%d)
+
   # Use date to parse - macOS date syntax
-  if date -j -f "%I:%M%p" "$TARGET_TIME" "+%s" &>/dev/null; then
+  if date -j -f "%Y-%m-%d %I:%M%p" "${TODAY} ${TARGET_TIME}" "+%s" &>/dev/null; then
     # 12h format (e.g., 3:00pm)
-    TARGET_TS=$(date -j -f "%I:%M%p" "$TARGET_TIME" "+%s" 2>/dev/null)
-  elif date -j -f "%H:%M" "$TARGET_TIME" "+%s" &>/dev/null; then
+    TARGET_TS=$(date -j -f "%Y-%m-%d %I:%M%p" "${TODAY} ${TARGET_TIME}" "+%s" 2>/dev/null)
+  elif date -j -f "%Y-%m-%d %H:%M" "${TODAY} ${TARGET_TIME}" "+%s" &>/dev/null; then
     # 24h format (e.g., 15:00)
-    TARGET_TS=$(date -j -f "%H:%M" "$TARGET_TIME" "+%s" 2>/dev/null)
+    TARGET_TS=$(date -j -f "%Y-%m-%d %H:%M" "${TODAY} ${TARGET_TIME}" "+%s" 2>/dev/null)
   else
     echo "Error: Could not parse time '$DURATION_ARG'" >&2
     echo "Examples: 3:00pm, 15:00, 5:30pm" >&2
