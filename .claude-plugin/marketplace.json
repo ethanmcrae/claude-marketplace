@@ -27,6 +27,17 @@
       "source": "./plugins/claude-usage",
       "category": "productivity",
       "keywords": ["usage", "limits", "quota", "claude.ai", "capacity"]
+    },
+    {
+      "name": "caffeine",
+      "description": "Keep Claude working for a specified duration via /caffeinate",
+      "version": "1.0.0",
+      "author": {
+        "name": "Ethan McRae"
+      },
+      "source": "./plugins/caffeine",
+      "category": "productivity",
+      "keywords": ["caffeinate", "timer", "focus", "idle", "duration"]
     }
   ]
 }

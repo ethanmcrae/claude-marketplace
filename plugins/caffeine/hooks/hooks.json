@@ -1,0 +1,16 @@
+{
+  "description": "Caffeine plugin stop hook - keeps Claude working until timer expires",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/stop-hook.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

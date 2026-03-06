@@ -1,0 +1,5 @@
+{
+  "name": "caffeine",
+  "description": "Keep Claude working for a specified duration via /caffeinate",
+  "version": "1.0.0"
+}
