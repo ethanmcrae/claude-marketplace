@@ -9,12 +9,6 @@ set -euo pipefail
 # Read hook input from stdin
 HOOK_INPUT=$(cat)
 
-# If a stop hook already fired this cycle, don't block again (prevents tight loops)
-STOP_ACTIVE=$(echo "$HOOK_INPUT" | jq -r '.stop_hook_active // false')
-if [[ "$STOP_ACTIVE" == "true" ]]; then
-  exit 0
-fi
-
 # Extract session ID from hook input
 HOOK_SESSION=$(echo "$HOOK_INPUT" | jq -r '.session_id // ""')
 
