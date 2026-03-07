@@ -13,4 +13,4 @@ Execute the setup script to start the caffeinate timer:
 "${CLAUDE_PLUGIN_ROOT}/scripts/setup-caffeinate.sh" $ARGUMENTS
 ```
 
-The caffeinate timer is now active. Continue working on whatever task is at hand. When you would normally stop, the stop hook will keep you going until the timer expires. Work naturally and don't rush - you have the full duration to think deeply and produce quality work.
+The caffeinate timer is now active. Report the result to the user and wait for their next instruction. The stop hook will automatically keep you working on subsequent tasks until the timer expires.

@@ -1,13 +1,24 @@
 {
-  "description": "Caffeine plugin stop hook - keeps Claude working until timer expires",
+  "description": "Caffeine plugin hooks - keeps Claude working until timer expires",
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/session-start.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/stop-hook.sh",
-            "timeout": 5
+            "timeout": 10
           }
         ]
       }

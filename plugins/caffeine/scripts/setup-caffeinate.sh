@@ -49,7 +49,7 @@ DURATION_ARG="$*"
 if [[ "$DURATION_ARG" == "stop" ]] || [[ "$DURATION_ARG" == "cancel" ]]; then
   if [[ -f "$STATE_FILE" ]]; then
     rm -f "$STATE_FILE"
-    echo "☕ Caffeinate cancelled."
+    echo "Caffeinate cancelled."
   else
     echo "No active caffeinate timer."
   fi
@@ -113,8 +113,10 @@ else
   EXPIRY=$((NOW + TOTAL_SECONDS))
 fi
 
-# Write state file (just the expiry timestamp - simple and fast to read)
+# Write state file (line 1: expiry, line 2: creation timestamp)
+# Grace period: stops within 10s of creation are allowed so user can provide their task
 echo "$EXPIRY" > "$STATE_FILE"
+echo "$NOW" >> "$STATE_FILE"
 
 # Calculate display values
 REMAINING=$((EXPIRY - NOW))

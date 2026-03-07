@@ -9,8 +9,9 @@ set -euo pipefail
 # Read hook input from stdin
 HOOK_INPUT=$(cat)
 
-# Extract session ID from hook input
+# Extract session ID and stop_hook_active from hook input
 HOOK_SESSION=$(echo "$HOOK_INPUT" | jq -r '.session_id // ""')
+STOP_HOOK_ACTIVE=$(echo "$HOOK_INPUT" | jq -r '.stop_hook_active // false')
 
 if [[ -z "$HOOK_SESSION" ]]; then
   exit 0
@@ -23,8 +24,10 @@ if [[ ! -f "$STATE_FILE" ]]; then
   exit 0
 fi
 
-# Read state
-EXPIRY=$(head -1 "$STATE_FILE")
+# Read state (line 1: expiry, line 2: creation timestamp)
+EXPIRY=$(sed -n '1p' "$STATE_FILE")
+CREATED=$(sed -n '2p' "$STATE_FILE")
+CREATED="${CREATED:-0}"
 NOW=$(date +%s)
 
 # Validate expiry is numeric
@@ -37,9 +40,29 @@ fi
 REMAINING=$((EXPIRY - NOW))
 
 if [[ $REMAINING -le 0 ]]; then
-  # Timer expired - clean up and allow stop
   rm -f "$STATE_FILE"
   exit 0
+fi
+
+# Grace period: within 10s of creation, allow stops so user can provide their task
+if [[ "$CREATED" =~ ^[0-9]+$ ]]; then
+  ELAPSED_SINCE_CREATION=$((NOW - CREATED))
+  if [[ $ELAPSED_SINCE_CREATION -lt 10 ]]; then
+    exit 0
+  fi
+fi
+
+# If in a continuation loop (stop_hook_active), sleep to throttle and give breathing room
+if [[ "$STOP_HOOK_ACTIVE" == "true" ]]; then
+  sleep 5
+
+  # Recalculate after sleep
+  NOW=$(date +%s)
+  REMAINING=$((EXPIRY - NOW))
+  if [[ $REMAINING -le 0 ]]; then
+    rm -f "$STATE_FILE"
+    exit 0
+  fi
 fi
 
 # Format remaining time for display
@@ -70,17 +93,12 @@ fi
 # Substitute time placeholder
 PROMPT="${PROMPT//TIME_REMAINING/$TIME_STR}"
 
-# Format expiry as clock time for system message
-EXPIRY_TIME=$(date -r "$EXPIRY" +"%H:%M" 2>/dev/null || date -d "@$EXPIRY" +"%H:%M" 2>/dev/null || echo "unknown")
-
 # Block the stop and inject continuation
 jq -n \
-  --arg prompt "$PROMPT" \
-  --arg msg "☕ Caffeinated until ${EXPIRY_TIME} (${TIME_STR} remaining)" \
+  --arg reason "$PROMPT" \
   '{
     "decision": "block",
-    "reason": $prompt,
-    "systemMessage": $msg
+    "reason": $reason
   }'
 
 exit 0

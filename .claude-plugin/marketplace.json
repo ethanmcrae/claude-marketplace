@@ -31,7 +31,7 @@
     {
       "name": "caffeine",
       "description": "Keep Claude working for a specified duration via /caffeinate",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "author": {
         "name": "Ethan McRae"
       },
