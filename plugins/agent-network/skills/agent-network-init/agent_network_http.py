@@ -68,6 +68,8 @@ def _auth_peer(handler: BaseHTTPRequestHandler, db: sqlite3.Connection) -> dict 
     if not auth.startswith("Bearer "):
         return None
     token = auth[7:]
+    if not token:
+        return None
     peer = db.execute(
         "SELECT name, url, shared_secret, status, direction FROM peers "
         "WHERE shared_secret = ? AND status = 'approved' AND direction = 'mutual'",
@@ -102,9 +104,24 @@ def _auto_accept(peer_name: str, peer_url: str, local_port: int):
         logger.warning(f"Auto-accept loopback failed for '{peer_name}': {e}")
         return
 
-    # Step 2: Notify remote so they also reach mutual
+    # Step 2: Read our stored secret so the remote can sync it
+    peer_secret = ""
+    db = _get_db()
     try:
-        req_data = json.dumps({"name": our_name, "url": our_url}).encode()
+        row = db.execute(
+            "SELECT shared_secret FROM peers WHERE name = ?", (peer_name,),
+        ).fetchone()
+        if row:
+            peer_secret = row["shared_secret"]
+    finally:
+        db.close()
+
+    # Step 3: Notify remote so they also reach mutual (include secret for sync)
+    try:
+        payload = {"name": our_name, "url": our_url}
+        if peer_secret:
+            payload["secret"] = peer_secret
+        req_data = json.dumps(payload).encode()
         req = urllib.request.Request(
             f"{peer_url}/api/pair/accept",
             data=req_data,
@@ -477,6 +494,7 @@ class AgentNetworkHandler(BaseHTTPRequestHandler):
             data = _read_body(self)
             peer_name = data.get("name", "")
             peer_url = data.get("url", "")
+            peer_secret = data.get("secret", "")
 
             if not peer_name:
                 _json_response(self, 400, {"error": "name is required"})
@@ -508,11 +526,18 @@ class AgentNetworkHandler(BaseHTTPRequestHandler):
             stored_name = peer["name"]
 
             db.execute("BEGIN IMMEDIATE")
-            db.execute(
-                "UPDATE peers SET status = 'approved', direction = 'mutual', "
-                "last_seen = unixepoch('now') WHERE name = ?",
-                (stored_name,),
-            )
+            if peer_secret:
+                db.execute(
+                    "UPDATE peers SET status = 'approved', direction = 'mutual', "
+                    "shared_secret = ?, last_seen = unixepoch('now') WHERE name = ?",
+                    (peer_secret, stored_name),
+                )
+            else:
+                db.execute(
+                    "UPDATE peers SET status = 'approved', direction = 'mutual', "
+                    "last_seen = unixepoch('now') WHERE name = ?",
+                    (stored_name,),
+                )
 
             # Write system notification
             sessions = db.execute("SELECT agent_id FROM sessions").fetchall()

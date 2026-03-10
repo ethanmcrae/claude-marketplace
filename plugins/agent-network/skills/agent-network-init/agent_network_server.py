@@ -1096,7 +1096,7 @@ def approve_peer(peer_id: str) -> dict:
         status_code, _resp = _http_request(
             f"{peer['url']}/api/pair/accept",
             method="POST",
-            data={"name": _get_machine_name(), "url": local_url},
+            data={"name": _get_machine_name(), "url": local_url, "secret": peer["shared_secret"]},
             secret=peer["shared_secret"],
         )
 
